@@ -11,6 +11,7 @@ export function useChat() {
     deleteSession,
     addMessage,
     updateLastAssistantMessage,
+    persist,
     editMessage,
   } = useChatStore();
 
@@ -72,9 +73,10 @@ export function useChat() {
       } finally {
         setLoading(false);
         setAbortController(null);
+        persist();
       }
     },
-    [currentSession, addMessage, updateLastAssistantMessage]
+    [currentSession, addMessage, updateLastAssistantMessage, persist]
   );
 
   const regenerate = useCallback(async () => {
@@ -115,8 +117,9 @@ export function useChat() {
     } finally {
       setLoading(false);
       setAbortController(null);
+      persist();
     }
-  }, [currentSession, addMessage, updateLastAssistantMessage]);
+  }, [currentSession, addMessage, updateLastAssistantMessage, persist]);
 
   const startEditMessage = (message: Message) => {
     setEditingMessage(message);

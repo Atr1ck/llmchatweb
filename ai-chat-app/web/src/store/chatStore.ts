@@ -21,6 +21,7 @@ type ChatState = {
   deleteSession: (id: string) => void;
   addMessage: (sessionId: string, message: Message) => void;
   updateLastAssistantMessage: (sessionId: string, content: string) => void;
+  persist: () => void;
   editMessage: (sessionId: string, messageId: string, content: string) => void;
 };
 
@@ -122,9 +123,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }
           : s
       );
-      persistState(sessions, state.currentSessionId);
+      // 流式过程中不持久化，避免每个 chunk 都写 localStorage
       return { sessions };
     }),
+
+  persist: () => {
+    const { sessions, currentSessionId } = get();
+    persistState(sessions, currentSessionId);
+  },
 
   editMessage: (sessionId, messageId, content) =>
     set((state) => {

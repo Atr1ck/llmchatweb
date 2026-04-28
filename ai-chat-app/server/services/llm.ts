@@ -61,21 +61,22 @@ export async function streamLLMResponse(
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
+    let sseBuffer = "";
 
     // 解析 SSE 流，只提取 delta.content 文本返回给前端
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      const raw = decoder.decode(value, { stream: true });
+      sseBuffer += decoder.decode(value, { stream: true });
 
-      const lines = raw
-        .split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean);
+      const lines = sseBuffer.split("\n");
+      // 最后一行可能不完整，留在 buffer 等下次拼接
+      sseBuffer = lines.pop()!;
 
       for (const line of lines) {
-        if (!line.startsWith("data:")) continue;
-        const payload = line.slice("data:".length).trim();
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith("data:")) continue;
+        const payload = trimmed.slice("data:".length).trim();
         if (payload === "[DONE]") {
           continue;
         }

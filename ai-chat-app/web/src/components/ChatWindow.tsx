@@ -14,10 +14,11 @@ export const ChatWindow: React.FC<Props> = ({
   onEditMessage,
 }) => {
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const lastContent = messages.length > 0 ? messages[messages.length - 1].content : "";
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, loading]);
+  }, [messages.length, loading, lastContent]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50/40 px-4 py-4 dark:bg-slate-900/40">

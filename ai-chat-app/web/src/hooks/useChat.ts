@@ -15,6 +15,10 @@ export function useChat() {
   } = useChatStore();
 
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [abortController, setAbortController] = useState<AbortController | null>(
+    null
+  );
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
 
   useEffect(() => {
@@ -45,7 +49,11 @@ export function useChat() {
       addMessage(sessionId, userMessage);
       addMessage(sessionId, assistantMessage);
 
+      setError(null);
       setLoading(true);
+
+      const controller = new AbortController();
+      setAbortController(controller);
 
       try {
         let buffer = "";
@@ -54,10 +62,16 @@ export function useChat() {
           (chunk) => {
             buffer += chunk;
             updateLastAssistantMessage(sessionId, buffer);
-          }
+          },
+          { signal: controller.signal }
         );
+      } catch (e) {
+        if ((e as Error).name !== "AbortError") {
+          setError("对话生成失败，请稍后重试。");
+        }
       } finally {
         setLoading(false);
+        setAbortController(null);
       }
     },
     [currentSession, addMessage, updateLastAssistantMessage]
@@ -78,15 +92,29 @@ export function useChat() {
     };
     addMessage(sessionId, assistantMessage);
 
+    setError(null);
     setLoading(true);
+
+    const controller = new AbortController();
+    setAbortController(controller);
+
     try {
       let buffer = "";
-      await streamChat(currentSession.messages, (chunk) => {
-        buffer += chunk;
-        updateLastAssistantMessage(sessionId, buffer);
-      });
+      await streamChat(
+        currentSession.messages,
+        (chunk) => {
+          buffer += chunk;
+          updateLastAssistantMessage(sessionId, buffer);
+        },
+        { signal: controller.signal }
+      );
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        setError("重新生成失败，请稍后重试。");
+      }
     } finally {
       setLoading(false);
+      setAbortController(null);
     }
   }, [currentSession, addMessage, updateLastAssistantMessage]);
 
@@ -100,17 +128,25 @@ export function useChat() {
     setEditingMessage(null);
   };
 
+  const stopGeneration = () => {
+    if (abortController) {
+      abortController.abort();
+    }
+  };
+
   return {
     sessions,
     currentSession,
     currentSessionId,
     loading,
+    error,
     editingMessage,
     createSession,
     switchSession,
     deleteSession,
     sendMessage,
     regenerate,
+    stopGeneration,
     startEditMessage,
     applyEditMessage,
   };

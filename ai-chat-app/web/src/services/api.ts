@@ -2,7 +2,8 @@ import type { Message } from "../store/chatStore";
 
 export async function streamChat(
   messages: Message[],
-  onChunk: (chunk: string) => void
+  onChunk: (chunk: string) => void,
+  options?: { signal?: AbortSignal }
 ): Promise<void> {
   const response = await fetch("/api/chat", {
     method: "POST",
@@ -10,6 +11,7 @@ export async function streamChat(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ messages }),
+    signal: options?.signal,
   });
 
   if (!response.body) {

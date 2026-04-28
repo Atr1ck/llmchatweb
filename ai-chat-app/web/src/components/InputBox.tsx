@@ -5,12 +5,16 @@ type Props = {
   disabled?: boolean;
   onSend: (content: string) => void;
   onRegenerate: () => void;
+  onStop?: () => void;
+  isGenerating?: boolean;
 };
 
 export const InputBox: React.FC<Props> = ({
   disabled,
   onSend,
   onRegenerate,
+  onStop,
+  isGenerating,
 }) => {
   const [value, setValue] = useState("");
 
@@ -41,15 +45,26 @@ export const InputBox: React.FC<Props> = ({
           disabled={disabled}
         />
         <div className="flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={handleClickSend}
-            disabled={disabled || !value.trim()}
-            className="inline-flex h-[26px] items-center justify-center rounded-lg bg-sky-500 px-3 text-xs font-medium text-white shadow-sm hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-sky-400/60"
-          >
-            <SendHorizonal className="mr-1 h-3 w-3" />
-            发送
-          </button>
+          {isGenerating ? (
+            <button
+              type="button"
+              onClick={onStop}
+              disabled={!isGenerating}
+              className="inline-flex h-[26px] items-center justify-center rounded-lg bg-rose-500 px-3 text-xs font-medium text-white shadow-sm hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-rose-400/60"
+            >
+              停止
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleClickSend}
+              disabled={disabled || !value.trim()}
+              className="inline-flex h-[26px] items-center justify-center rounded-lg bg-sky-500 px-3 text-xs font-medium text-white shadow-sm hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-sky-400/60"
+            >
+              <SendHorizonal className="mr-1 h-3 w-3" />
+              发送
+            </button>
+          )}
           <button
             type="button"
             onClick={onRegenerate}

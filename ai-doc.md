@@ -18,3 +18,6 @@
 第 18 步：修正根 package.json 的 server 启动脚本，增加 --project server/tsconfig.json 参数，使 ts-node-dev 使用 server 下的 tsconfig（避免 TS5109 模块解析报错），确保后端能正常编译启动。
 第 19 步：修正 useChat Hook 中流式回调的累加逻辑，改为在 sendMessage/regenerate 中使用本地 buffer 逐块追加 chunk 并调用 updateLastAssistantMessage，避免因闭包持有旧 messages 导致只显示最后一块内容，保证前端真正实现逐字流式输出效果。
 第 20 步：调整 server/services/llm.ts 中对 OpenAI/DeepSeek SSE 流的处理逻辑，逐行解析以 data: 开头的 JSON，提取 choices[0].delta.content 并只把纯文本内容写回前端，避免前端看到整段 SSE JSON，而是正常的逐字回答。
+第 21 步：为前端会话状态增加本地持久化，在 chatStore 中通过 localStorage 读写 sessions 与 currentSessionId，使刷新页面后历史会话和消息仍然保留。
+第 22 步：扩展 streamChat 支持 AbortSignal，结合 useChat 中的 AbortController，在发送和重新生成时可中断当前请求并清理 loading 状态。
+第 23 步：在 useChat 中新增 error 与 stopGeneration，配合 ChatPage 显示错误提示条和 InputBox 的“停止”按钮，让用户可以主动终止流式生成并在接口出错时获得清晰反馈。

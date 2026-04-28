@@ -24,13 +24,44 @@ type ChatState = {
   editMessage: (sessionId: string, messageId: string, content: string) => void;
 };
 
+const STORAGE_KEY = "ai-chat-sessions-v1";
+
 function createId() {
   return Math.random().toString(36).slice(2);
 }
 
+function loadInitialState(): Pick<ChatState, "sessions" | "currentSessionId"> {
+  if (typeof window === "undefined") {
+    return { sessions: [], currentSessionId: null };
+  }
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { sessions: [], currentSessionId: null };
+    const parsed = JSON.parse(raw) as {
+      sessions?: Session[];
+      currentSessionId?: string | null;
+    };
+    return {
+      sessions: parsed.sessions ?? [],
+      currentSessionId: parsed.currentSessionId ?? null,
+    };
+  } catch {
+    return { sessions: [], currentSessionId: null };
+  }
+}
+
+function persistState(sessions: Session[], currentSessionId: string | null) {
+  if (typeof window === "undefined") return;
+  try {
+    const payload = JSON.stringify({ sessions, currentSessionId });
+    window.localStorage.setItem(STORAGE_KEY, payload);
+  } catch {
+    // ignore
+  }
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
-  sessions: [],
-  currentSessionId: null,
+  ...loadInitialState(),
 
   createSession: () =>
     set((state) => {
@@ -41,16 +72,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messages: [],
         createdAt: Date.now(),
       };
+      const sessions = [newSession, ...state.sessions];
+      const currentSessionId = id;
+      persistState(sessions, currentSessionId);
       return {
-        sessions: [newSession, ...state.sessions],
-        currentSessionId: id,
+        sessions,
+        currentSessionId,
       };
     }),
 
   switchSession: (id: string) =>
-    set(() => ({
-      currentSessionId: id,
-    })),
+    set((state) => {
+      const currentSessionId = id;
+      persistState(state.sessions, currentSessionId);
+      return { currentSessionId };
+    }),
 
   deleteSession: (id: string) =>
     set((state) => {
@@ -59,19 +95,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
         state.currentSessionId === id
           ? sessions[0]?.id ?? null
           : state.currentSessionId;
+      persistState(sessions, currentSessionId);
       return { sessions, currentSessionId };
     }),
 
   addMessage: (sessionId, message) =>
-    set((state) => ({
-      sessions: state.sessions.map((s) =>
+    set((state) => {
+      const sessions = state.sessions.map((s) =>
         s.id === sessionId ? { ...s, messages: [...s.messages, message] } : s
-      ),
-    })),
+      );
+      persistState(sessions, state.currentSessionId);
+      return { sessions };
+    }),
 
   updateLastAssistantMessage: (sessionId, content) =>
-    set((state) => ({
-      sessions: state.sessions.map((s) =>
+    set((state) => {
+      const sessions = state.sessions.map((s) =>
         s.id === sessionId
           ? {
               ...s,
@@ -82,12 +121,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
               ),
             }
           : s
-      ),
-    })),
+      );
+      persistState(sessions, state.currentSessionId);
+      return { sessions };
+    }),
 
   editMessage: (sessionId, messageId, content) =>
-    set((state) => ({
-      sessions: state.sessions.map((s) =>
+    set((state) => {
+      const sessions = state.sessions.map((s) =>
         s.id === sessionId
           ? {
               ...s,
@@ -96,7 +137,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
               ),
             }
           : s
-      ),
-    })),
+      );
+      persistState(sessions, state.currentSessionId);
+      return { sessions };
+    }),
 }));
 

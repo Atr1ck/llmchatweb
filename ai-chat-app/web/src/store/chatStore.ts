@@ -1,9 +1,44 @@
 import { create } from "zustand";
 
+/** Agent 循环阶段 */
+export type AgentStage = "thinking" | "tool_calling" | "observing" | "responding";
+
+/** 工具调用结果 */
+export type ToolResult = {
+  id: string;
+  name: string;
+  result: string;
+  success: boolean;
+  duration: number;
+};
+
+/** Agent 状态 */
+export type AgentStatus = {
+  currentRound: number;
+  maxRounds: number;
+  stage: AgentStage;
+  toolName?: string;
+  toolSuccess?: boolean;
+  toolDuration?: number;
+};
+
+export type ToolCall = {
+  id: string;
+  name: string;
+  arguments: string;
+  status?: "pending" | "success" | "error";
+  result?: string;
+  duration?: number;
+};
+
 export type Message = {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system" | "tool";
   content: string;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+  name?: string;
+  tool_results?: ToolResult[];
 };
 
 export type Session = {
@@ -11,6 +46,7 @@ export type Session = {
   title: string;
   messages: Message[];
   createdAt: number;
+  agentStatus?: AgentStatus;
 };
 
 type ChatState = {
@@ -21,6 +57,9 @@ type ChatState = {
   deleteSession: (id: string) => void;
   addMessage: (sessionId: string, message: Message) => void;
   updateLastAssistantMessage: (sessionId: string, content: string) => void;
+  updateLastAssistantToolCalls: (sessionId: string, toolCalls: ToolCall[]) => void;
+  updateLastAssistantToolResult: (sessionId: string, toolCallId: string, result: string, success: boolean, duration: number) => void;
+  setAgentStatus: (sessionId: string, status: AgentStatus | undefined) => void;
   persist: () => void;
   editMessage: (sessionId: string, messageId: string, content: string) => void;
 };
@@ -111,19 +150,85 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   updateLastAssistantMessage: (sessionId, content) =>
     set((state) => {
+      const sessions = state.sessions.map((s) => {
+        if (s.id !== sessionId) return s;
+        // 从末尾找最后一条 assistant 消息（tool 消息可能在其之后）
+        const lastIdx = s.messages.reduce(
+          (acc, m, i) => (m.role === "assistant" ? i : acc),
+          -1
+        );
+        if (lastIdx === -1) return s;
+        return {
+          ...s,
+          messages: s.messages.map((m, i) =>
+            i === lastIdx ? { ...m, content } : m
+          ),
+        };
+      });
+      return { sessions };
+    }),
+
+  updateLastAssistantToolCalls: (sessionId, toolCalls) =>
+    set((state) => {
+      const sessions = state.sessions.map((s) => {
+        if (s.id !== sessionId) return s;
+        const lastIdx = s.messages.reduce(
+          (acc, m, i) => (m.role === "assistant" ? i : acc),
+          -1
+        );
+        if (lastIdx === -1) return s;
+        return {
+          ...s,
+          messages: s.messages.map((m, i) =>
+            i === lastIdx ? { ...m, tool_calls: toolCalls } : m
+          ),
+        };
+      });
+      return { sessions };
+    }),
+
+  updateLastAssistantToolResult: (sessionId, toolCallId, result, success, duration) =>
+    set((state) => {
+      const sessions = state.sessions.map((s) => {
+        if (s.id !== sessionId) return s;
+        const lastIdx = s.messages.reduce(
+          (acc, m, i) => (m.role === "assistant" ? i : acc),
+          -1
+        );
+        if (lastIdx === -1) return s;
+        const assistantMsg = s.messages[lastIdx];
+        if (!assistantMsg.tool_calls) return s;
+
+        const updatedToolCalls = assistantMsg.tool_calls.map((tc) =>
+          tc.id === toolCallId
+            ? { ...tc, status: success ? ("success" as const) : ("error" as const), result, duration }
+            : tc
+        );
+
+        return {
+          ...s,
+          messages: s.messages.map((m, i) =>
+            i === lastIdx
+              ? {
+                  ...m,
+                  tool_calls: updatedToolCalls,
+                  tool_results: [
+                    ...(m.tool_results || []),
+                    { id: toolCallId, name: assistantMsg.tool_calls?.find(tc => tc.id === toolCallId)?.name || "", result, success, duration },
+                  ],
+                }
+              : m
+          ),
+        };
+      });
+      return { sessions };
+    }),
+
+  setAgentStatus: (sessionId, status) =>
+    set((state) => {
       const sessions = state.sessions.map((s) =>
-        s.id === sessionId
-          ? {
-              ...s,
-              messages: s.messages.map((m, index) =>
-                index === s.messages.length - 1 && m.role === "assistant"
-                  ? { ...m, content }
-                  : m
-              ),
-            }
-          : s
+        s.id === sessionId ? { ...s, agentStatus: status } : s
       );
-      // 流式过程中不持久化，避免每个 chunk 都写 localStorage
       return { sessions };
     }),
 

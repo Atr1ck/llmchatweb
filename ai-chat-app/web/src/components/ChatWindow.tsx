@@ -1,16 +1,19 @@
 import React, { useEffect, useRef } from "react";
 import { MessageItem } from "./MessageItem";
-import type { Message } from "../store/chatStore";
+import { AgentStatusBar } from "./AgentStatusBar";
+import type { Message, AgentStatus } from "../store/chatStore";
 
 type Props = {
   messages: Message[];
   loading: boolean;
+  agentStatus?: AgentStatus | null;
   onEditMessage: (message: Message) => void;
 };
 
 export const ChatWindow: React.FC<Props> = ({
   messages,
   loading,
+  agentStatus,
   onEditMessage,
 }) => {
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -26,7 +29,16 @@ export const ChatWindow: React.FC<Props> = ({
         {messages.map((m) => (
           <MessageItem key={m.id} message={m} onEdit={onEditMessage} />
         ))}
-        {loading && (
+        {/* Agent 状态条 */}
+        {loading && agentStatus && (
+          <AgentStatusBar
+            currentRound={agentStatus.currentRound}
+            maxRounds={agentStatus.maxRounds}
+            stage={agentStatus.stage}
+            toolName={agentStatus.toolName}
+          />
+        )}
+        {loading && !agentStatus && (
           <div className="text-xs text-slate-500">Thinking...</div>
         )}
         <div ref={bottomRef} />

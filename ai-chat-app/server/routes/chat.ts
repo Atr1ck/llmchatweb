@@ -13,8 +13,11 @@ type ChatMessage = {
 router.post("/", async (req: Request, res: Response) => {
   const messages: ChatMessage[] = req.body?.messages ?? [];
 
-  res.setHeader("Content-Type", "text/plain; charset=utf-8");
-  res.setHeader("Transfer-Encoding", "chunked");
+  // SSE 标准格式
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders(); // 立即发送头部
 
   try {
     await streamLLMResponse(messages, res);
@@ -24,7 +27,8 @@ router.post("/", async (req: Request, res: Response) => {
     if (!res.headersSent) {
       res.status(500).end("Internal server error");
     } else {
-      res.write("\n[Error] Chat stream failed.");
+      res.write("event: error\n");
+      res.write(`data: ${JSON.stringify({ message: "Stream failed" })}\n\n`);
       res.end();
     }
   }

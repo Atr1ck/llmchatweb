@@ -13,6 +13,7 @@ export const ChatPage: React.FC = () => {
     loading,
     error,
     editingMessage,
+    agentStatus,
     createSession,
     switchSession,
     deleteSession,
@@ -78,6 +79,7 @@ export const ChatPage: React.FC = () => {
         <ChatWindow
           messages={currentSession?.messages ?? []}
           loading={loading}
+          agentStatus={agentStatus}
           onEditMessage={startEditMessage}
         />
 

@@ -166,14 +166,14 @@ class SSEParser {
 export async function streamChat(
   messages: Message[],
   callbacks: SSECallbacks,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal; sessionId?: string }
 ): Promise<void> {
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, sessionId: options?.sessionId }),
     signal: options?.signal,
   });
 

@@ -7,6 +7,8 @@ type Props = {
   onRegenerate: () => void;
   onStop?: () => void;
   isGenerating?: boolean;
+  /** centered = 空状态居中样式；bottom = 聊天底部样式 */
+  variant?: "centered" | "bottom";
 };
 
 export const InputBox: React.FC<Props> = ({
@@ -15,6 +17,7 @@ export const InputBox: React.FC<Props> = ({
   onRegenerate,
   onStop,
   isGenerating,
+  variant = "bottom",
 }) => {
   const [value, setValue] = useState("");
 
@@ -33,11 +36,17 @@ export const InputBox: React.FC<Props> = ({
     setValue("");
   };
 
+  const isCentered = variant === "centered";
+
   return (
-    <div className="border-t border-slate-200 bg-white/80 p-3 backdrop-blur dark:border-slate-700 dark:bg-slate-900/60">
-      <div className="mx-auto flex max-w-3xl gap-2">
+    <div className={isCentered ? "w-full" : "mx-auto w-full max-w-3xl"}>
+      <div className={`flex gap-2 ${isCentered ? "" : ""}`}>
         <textarea
-          className="min-h-[56px] flex-1 resize-none rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-50"
+          className={`min-h-[56px] flex-1 resize-none rounded-xl border bg-slate-50 px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 dark:bg-slate-800 dark:text-slate-50 ${
+            isCentered
+              ? "border-slate-300 text-slate-900 dark:border-slate-700"
+              : "border-slate-300 text-slate-900 dark:border-slate-700"
+          }`}
           placeholder="输入消息，Enter 发送，Shift+Enter 换行"
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -79,4 +88,3 @@ export const InputBox: React.FC<Props> = ({
     </div>
   );
 };
-

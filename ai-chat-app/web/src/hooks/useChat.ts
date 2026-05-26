@@ -116,7 +116,7 @@ export function useChat() {
             },
             onDone: () => {},
           },
-          { signal: controller.signal }
+          { signal: controller.signal, sessionId }
         );
       } catch (e) {
         if ((e as Error).name !== "AbortError") {
@@ -210,7 +210,7 @@ export function useChat() {
           },
           onDone: () => {},
         },
-        { signal: controller.signal }
+        { signal: controller.signal, sessionId }
       );
     } catch (e) {
       if ((e as Error).name !== "AbortError") {

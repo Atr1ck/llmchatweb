@@ -24,8 +24,8 @@ export const ChatWindow: React.FC<Props> = ({
   }, [messages.length, loading, lastContent]);
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50/40 px-4 py-4 dark:bg-slate-900/40">
-      <div className="mx-auto flex max-w-3xl flex-col gap-3">
+    <div className="flex-1 overflow-y-auto bg-slate-50 px-4 py-4 dark:bg-[#212121]">
+      <div className="mx-auto flex max-w-3xl flex-col gap-3 pb-4">
         {messages.map((m) => (
           <MessageItem key={m.id} message={m} onEdit={onEditMessage} />
         ))}

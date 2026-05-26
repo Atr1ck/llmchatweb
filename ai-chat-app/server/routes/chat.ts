@@ -12,6 +12,7 @@ type ChatMessage = {
 
 router.post("/", async (req: Request, res: Response) => {
   const messages: ChatMessage[] = req.body?.messages ?? [];
+  const sessionId: string | undefined = req.body?.sessionId;
 
   // SSE 标准格式
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -20,7 +21,7 @@ router.post("/", async (req: Request, res: Response) => {
   res.flushHeaders(); // 立即发送头部
 
   try {
-    await streamLLMResponse(messages, res);
+    await streamLLMResponse(messages, res, sessionId);
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error("Chat stream error:", error);

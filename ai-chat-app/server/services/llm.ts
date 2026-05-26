@@ -51,6 +51,153 @@ const DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions";
 
 const MAX_AGENT_LOOPS = 5;
 
+// ─── 记忆系统 ───────────────────────────────────────────
+
+/** 会话摘要存储（内存，按 sessionId 索引） */
+const sessionSummaries = new Map<string, string>();
+
+/** 触发摘要的消息条数阈值 */
+const SUMMARY_THRESHOLD = 10;
+
+/** 保留最近的消息条数（不参与摘要） */
+const KEEP_RECENT = 6;
+
+/**
+ * 调用 LLM 生成对话摘要（非流式）
+ */
+async function generateSummary(
+  messages: ChatMessage[],
+  providerUrl: string,
+  apiKey: string
+): Promise<string> {
+  const summaryMessages: LLMessage[] = [
+    {
+      role: "system",
+      content: "请用简洁的中文总结以下对话的关键信息，包括：用户的主要问题、助手的回答要点、涉及的实体和结论。不超过200字。",
+    },
+    {
+      role: "user",
+      content: messages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => `${m.role === "user" ? "用户" : "助手"}：${m.content.slice(0, 300)}`)
+        .join("\n"),
+    },
+  ];
+
+  const response = await fetch(providerUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: process.env.LLM_MODEL || (USE_OPENAI ? "gpt-4.1-mini" : "deepseek-chat"),
+      messages: summaryMessages,
+    }),
+  });
+
+  const data = await response.json() as {
+    choices?: { message?: { content?: string } }[];
+  };
+  return data.choices?.[0]?.message?.content || "";
+}
+
+/**
+ * 压缩消息：摘要旧消息 + 保留最近消息
+ * 返回压缩后的 ChatMessage[]
+ */
+async function compressMessages(
+  messages: ChatMessage[],
+  sessionId: string | undefined,
+  providerUrl: string,
+  apiKey: string
+): Promise<ChatMessage[]> {
+  if (messages.length <= SUMMARY_THRESHOLD) {
+    return messages;
+  }
+
+  // 分割：旧消息用于摘要，保留最近消息
+  const olderMessages = messages.slice(0, messages.length - KEEP_RECENT);
+  const recentMessages = messages.slice(messages.length - KEEP_RECENT);
+
+  // 获取已有摘要
+  const existingSummary = sessionId ? (sessionSummaries.get(sessionId) || "") : "";
+
+  // 生成新摘要（合并旧摘要 + 旧消息）
+  let newSummary: string;
+  try {
+    newSummary = await generateSummary(olderMessages, providerUrl, apiKey);
+    // eslint-disable-next-line no-console
+    console.log("[memory] 生成新摘要:", newSummary.slice(0, 100));
+  } catch (err) {
+    // 摘要失败则直接返回原始消息
+    // eslint-disable-next-line no-console
+    console.error("[memory] 摘要生成失败，使用原始消息:", err);
+    return messages;
+  }
+
+  // 合并旧摘要
+  const combinedSummary = existingSummary
+    ? `${existingSummary}\n\n最新摘要：${newSummary}`
+    : newSummary;
+
+  // 保存摘要
+  if (sessionId) {
+    sessionSummaries.set(sessionId, combinedSummary);
+  }
+
+  // 返回：摘要消息 + 最近消息
+  const summaryMessage: ChatMessage = {
+    id: `summary_${Date.now()}`,
+    role: "user",
+    content: `[对话历史摘要]\n${combinedSummary}`,
+  };
+
+  return [summaryMessage, ...recentMessages];
+}
+
+// ─── System Prompt ──────────────────────────────────────
+
+const SYSTEM_PROMPT = `你是一个智能助手，可以调用工具来辅助回答用户问题。请严格遵守以下规则：
+
+## 工具使用规则
+
+1. **get_weather** — 仅在用户明确询问某地天气时调用。例如："北京天气怎么样"、"东京现在几度"。
+2. **web_search** — 仅在用户明确要求搜索新闻/资讯，或需要你无法确定的事实性信息时调用。例如："最新AI新闻"、"搜索中国新闻"。
+3. **calculator** — 仅在用户给出明确数学表达式需要计算时调用。例如："计算 123*456"、"2+3等于多少"。
+
+## 限制
+
+- **不要无意义调用工具**：如果问题可以直接用你的知识回答（如常识、编程、写作、闲聊），就直接回答，不要调用任何工具。
+- **不要过度依赖工具**：用户问"你好"、"帮我写一段代码"、"解释一下XXX"等，这些都不需要工具。
+- **一次只调用必要的工具**：不要同时调用多个无关工具。
+
+## 工具结果处理
+
+### web_search 结果
+收到搜索结果后，你必须：
+1. 用 **3~5 句话** 对新闻要点进行简要总结，不要逐条翻译，要提炼核心信息。
+2. 在总结下方列出新闻标题和来源，格式如下：
+
+**新闻概要：**
+（3~5句总结）
+
+**相关报道：**
+1. 标题 — 来源
+2. 标题 — 来源
+3. 标题 — 来源
+
+### get_weather 结果
+用自然语言描述天气，包含：城市、天气状况、温度、湿度、风力。简洁友好。
+
+### calculator 结果
+直接给出计算结果，格式如：\`表达式 = 结果\`。
+
+## 回答风格
+
+- 优先直接回答，工具只是辅助。
+- 调用工具后，严格按上述格式组织回答，不要输出原始 JSON。`;
+
 console.log("USE_OPENAI", USE_OPENAI);
 console.log("USE_DEEPSEEK", USE_DEEPSEEK);
 console.log("OPENAI_API_KEY", OPENAI_API_KEY);
@@ -202,7 +349,8 @@ async function callLLMStream(
 
 export async function streamLLMResponse(
   messages: ChatMessage[],
-  res: Response
+  res: Response,
+  sessionId?: string
 ): Promise<void> {
   if (!USE_OPENAI && !USE_DEEPSEEK) {
     await mockStream(messages, res);
@@ -212,8 +360,13 @@ export async function streamLLMResponse(
   const providerUrl = USE_OPENAI ? OPENAI_URL : DEEPSEEK_URL;
   const apiKey = USE_OPENAI ? OPENAI_API_KEY! : DEEPSEEK_API_KEY!;
 
+  // ── 记忆压缩：超过阈值时摘要旧消息 ──
+  const compressedMessages = await compressMessages(messages, sessionId, providerUrl, apiKey);
+
   // 将 ChatMessage 转为 LLM API 消息格式
-  let apiMessages: LLMessage[] = messages.map((m) => {
+  let apiMessages: LLMessage[] = [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...compressedMessages.map((m) => {
     if (m.role === "tool") {
       return {
         role: "tool",
@@ -234,7 +387,8 @@ export async function streamLLMResponse(
       };
     }
     return { role: m.role, content: m.content };
-  });
+  }),
+  ];
 
   try {
     for (let loop = 0; loop < MAX_AGENT_LOOPS; loop++) {

@@ -1,5 +1,6 @@
 import React from "react";
 import hljs from "highlight.js";
+import "highlight.js/styles/github-dark.css";
 
 type Props = {
   language?: string;
@@ -8,12 +9,15 @@ type Props = {
 
 export const CodeBlock: React.FC<Props> = ({ language, value }) => {
   const [copied, setCopied] = React.useState(false);
-  const codeRef = React.useRef<HTMLElement | null>(null);
 
-  React.useEffect(() => {
-    if (codeRef.current) {
-      hljs.highlightElement(codeRef.current);
+  const highlighted = React.useMemo(() => {
+    if (language && hljs.getLanguage(language)) {
+      return hljs.highlight(value, {
+        language,
+        ignoreIllegals: true,
+      }).value;
     }
+    return hljs.highlightAuto(value).value;
   }, [value, language]);
 
   const handleCopy = async () => {
@@ -36,11 +40,11 @@ export const CodeBlock: React.FC<Props> = ({ language, value }) => {
         {copied ? "Copied" : "Copy"}
       </button>
       <pre className="overflow-x-auto rounded-lg bg-slate-900/90 p-3 text-sm text-slate-100">
-        <code ref={codeRef} className={language ? `language-${language}` : ""}>
-          {value}
-        </code>
+        <code
+          className={`hljs ${language ? `language-${language}` : ""}`}
+          dangerouslySetInnerHTML={{ __html: highlighted }}
+        />
       </pre>
     </div>
   );
 };
-

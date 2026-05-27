@@ -1,7 +1,7 @@
 import React from "react";
+import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
 import { CodeBlock } from "./CodeBlock";
 import { ToolCallItem } from "./ToolCallItem";
 import type { Message } from "../store/chatStore";
@@ -10,6 +10,22 @@ type Props = {
   message: Message;
   onEdit?: (message: Message) => void;
 };
+
+function getTextContent(node: ReactNode): string {
+  if (node === null || node === undefined || typeof node === "boolean") {
+    return "";
+  }
+  if (typeof node === "string" || typeof node === "number") {
+    return String(node);
+  }
+  if (Array.isArray(node)) {
+    return node.map(getTextContent).join("");
+  }
+  if (React.isValidElement<{ children?: ReactNode }>(node)) {
+    return getTextContent(node.props.children);
+  }
+  return "";
+}
 
 export const MessageItem: React.FC<Props> = ({ message, onEdit }) => {
   const isUser = message.role === "user";
@@ -50,11 +66,10 @@ export const MessageItem: React.FC<Props> = ({ message, onEdit }) => {
         ) : (
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
-            rehypePlugins={[rehypeHighlight]}
             components={{
               code({ className, children, ...props }) {
                 const match = /language-(\w+)/.exec(className || "");
-                const value = String(children).replace(/\n$/, "");
+                const value = getTextContent(children).replace(/\n$/, "");
                 // 有 language 的是代码块，否则是内联代码
                 if (!match) {
                   return (
@@ -62,7 +77,7 @@ export const MessageItem: React.FC<Props> = ({ message, onEdit }) => {
                       className="rounded bg-slate-900/20 px-1 py-0.5 text-xs"
                       {...props}
                     >
-                      {children}
+                      {value}
                     </code>
                   );
                 }
@@ -91,4 +106,3 @@ export const MessageItem: React.FC<Props> = ({ message, onEdit }) => {
     </div>
   );
 };
-

@@ -84,6 +84,8 @@ export async function mockStream(messages: ChatMessage[], res: Response) {
       "- **北京天气怎么样？** → 触发 get_weather\n",
       "- **计算 123 * 456 + 789** → 触发 calculator\n",
       "- **搜索 React 19 有什么新特性** → 触发 web_search\n",
+      "- **读取 README.md** → 触发 read_file\n",
+      "- **列出 server 下的文件** → 触发 list_files\n",
     ];
     for (const chunk of chunks) {
       sendSSE(res, "text", { content: chunk });
@@ -133,6 +135,26 @@ function detectMockTool(text: string): MockTool | null {
       name: "web_search",
       args: { query },
       mockAnswer: `关于「${query}」的搜索结果：\n\n1. **${query}** - 相关信息概述（来源：示例百科）\n2. **关于${query}** - ${query}的最新动态（来源：示例新闻）\n3. **${query}使用指南** - ${query}的详细使用方法（来源：示例文档）\n\n以上是 Mock 模式的示例搜索结果。`,
+    };
+  }
+
+  const readFileMatch = text.match(/(?:读取|查看|分析|总结)\s+([^\s，。]+)/);
+  if (readFileMatch) {
+    const filePath = readFileMatch[1].trim();
+    return {
+      name: "read_file",
+      args: { path: filePath },
+      mockAnswer: `已读取 \`${filePath}\`。请查看上方工具结果中的文件内容，我可以继续帮你总结、解释或定位问题。`,
+    };
+  }
+
+  const listFilesMatch = text.match(/(?:列出|查找|浏览|递归查看)(?:\s+([^\s，。]+))?/);
+  if (listFilesMatch) {
+    const dirPath = listFilesMatch[1]?.trim() || ".";
+    return {
+      name: "list_files",
+      args: { path: dirPath },
+      mockAnswer: `已列出 \`${dirPath}\` 下的工作区文件。请查看上方工具结果，我可以继续帮你筛选或读取其中某个文件。`,
     };
   }
 

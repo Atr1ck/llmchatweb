@@ -3,6 +3,9 @@
  * 支持真实 API 调用 + Mock 回退
  */
 
+import fs from "node:fs/promises";
+import path from "node:path";
+
 // ─── 类型定义 ────────────────────────────────────────────
 
 /** JSON Schema 字段描述 */
@@ -378,6 +381,254 @@ async function executeCalculator(args: Record<string, unknown>): Promise<ToolRes
   }
 }
 
+// ─── read_file 工具实现 ─────────────────────────────────
+
+const READ_FILE_ROOT = path.resolve(process.env.READ_FILE_ROOT || process.cwd());
+const READ_FILE_MAX_BYTES = Number(process.env.READ_FILE_MAX_BYTES || 200 * 1024);
+
+const READ_FILE_ALLOWED_EXTENSIONS = new Set([
+  ".cjs",
+  ".css",
+  ".html",
+  ".js",
+  ".json",
+  ".jsx",
+  ".md",
+  ".mjs",
+  ".sql",
+  ".ts",
+  ".tsx",
+  ".txt",
+  ".xml",
+  ".yaml",
+  ".yml",
+]);
+
+const READ_FILE_BLOCKED_SEGMENTS = new Set([
+  ".git",
+  ".ssh",
+  ".npm",
+  ".cache",
+  "node_modules",
+  "dist",
+  "build",
+  "coverage",
+]);
+
+const READ_FILE_BLOCKED_FILENAMES = [
+  ".env",
+  ".env.local",
+  ".env.development",
+  ".env.production",
+  ".env.test",
+  "id_rsa",
+  "id_dsa",
+  "id_ecdsa",
+  "id_ed25519",
+];
+
+function isInsideRoot(fullPath: string): boolean {
+  const relative = path.relative(READ_FILE_ROOT, fullPath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function hasBlockedPathSegment(relativePath: string): boolean {
+  const segments = relativePath.split(path.sep);
+  return segments.some((segment) => {
+    const lower = segment.toLowerCase();
+    return (
+      READ_FILE_BLOCKED_SEGMENTS.has(lower) ||
+      READ_FILE_BLOCKED_FILENAMES.includes(lower) ||
+      lower.startsWith(".env.")
+    );
+  });
+}
+
+function resolveReadableFilePath(inputPath: string): {
+  fullPath: string;
+  relativePath: string;
+} {
+  const fullPath = path.resolve(READ_FILE_ROOT, inputPath);
+  if (!isInsideRoot(fullPath)) {
+    throw new Error("不允许读取工作区外的文件");
+  }
+
+  const relativePath = path.relative(READ_FILE_ROOT, fullPath);
+  if (!relativePath || relativePath.startsWith("..")) {
+    throw new Error("请提供工作区内的具体文件路径");
+  }
+
+  if (hasBlockedPathSegment(relativePath)) {
+    throw new Error("该路径被禁止读取");
+  }
+
+  const ext = path.extname(fullPath).toLowerCase();
+  if (!READ_FILE_ALLOWED_EXTENSIONS.has(ext)) {
+    throw new Error(`不允许读取该文件类型: ${ext || "无扩展名"}`);
+  }
+
+  return { fullPath, relativePath };
+}
+
+async function executeReadFile(args: Record<string, unknown>): Promise<ToolResult> {
+  const start = Date.now();
+  const inputPath = args.path as string;
+
+  if (!inputPath) {
+    return { success: false, error: "缺少必需参数 path", duration: Date.now() - start };
+  }
+
+  try {
+    const { fullPath, relativePath } = resolveReadableFilePath(inputPath);
+    const stat = await fs.stat(fullPath);
+
+    if (!stat.isFile()) {
+      return { success: false, error: "目标不是文件", duration: Date.now() - start };
+    }
+
+    if (stat.size > READ_FILE_MAX_BYTES) {
+      return {
+        success: false,
+        error: `文件过大，拒绝读取（最大 ${READ_FILE_MAX_BYTES} bytes）`,
+        duration: Date.now() - start,
+      };
+    }
+
+    const content = await fs.readFile(fullPath, "utf8");
+    return {
+      success: true,
+      data: {
+        path: relativePath,
+        size: stat.size,
+        content,
+      },
+      duration: Date.now() - start,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+      duration: Date.now() - start,
+    };
+  }
+}
+
+// ─── list_files 工具实现 ────────────────────────────────
+
+const LIST_FILES_DEFAULT_MAX_RESULTS = 300;
+const LIST_FILES_MAX_RESULTS_LIMIT = 1000;
+
+function resolveWorkspacePath(inputPath: string | undefined): {
+  fullPath: string;
+  relativePath: string;
+} {
+  const requestedPath = inputPath?.trim() || ".";
+  const fullPath = path.resolve(READ_FILE_ROOT, requestedPath);
+
+  if (!isInsideRoot(fullPath)) {
+    throw new Error("不允许访问工作区外的路径");
+  }
+
+  const relativePath = path.relative(READ_FILE_ROOT, fullPath);
+  if (relativePath && hasBlockedPathSegment(relativePath)) {
+    throw new Error("该路径被禁止访问");
+  }
+
+  return { fullPath, relativePath };
+}
+
+function getMaxResults(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return LIST_FILES_DEFAULT_MAX_RESULTS;
+  }
+  return Math.max(1, Math.min(Math.floor(value), LIST_FILES_MAX_RESULTS_LIMIT));
+}
+
+async function walkFiles(
+  currentPath: string,
+  results: string[],
+  maxResults: number
+): Promise<boolean> {
+  if (results.length >= maxResults) {
+    return true;
+  }
+
+  const entries = await fs.readdir(currentPath, { withFileTypes: true });
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const entry of entries) {
+    const fullPath = path.join(currentPath, entry.name);
+    const relativePath = path.relative(READ_FILE_ROOT, fullPath);
+
+    if (hasBlockedPathSegment(relativePath)) {
+      continue;
+    }
+
+    if (entry.isDirectory()) {
+      const truncated = await walkFiles(fullPath, results, maxResults);
+      if (truncated) return true;
+      continue;
+    }
+
+    if (entry.isFile()) {
+      results.push(relativePath);
+      if (results.length >= maxResults) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+async function executeListFiles(args: Record<string, unknown>): Promise<ToolResult> {
+  const start = Date.now();
+
+  try {
+    const { fullPath, relativePath } = resolveWorkspacePath(args.path as string | undefined);
+    const stat = await fs.stat(fullPath);
+    const maxResults = getMaxResults(args.maxResults);
+
+    if (stat.isFile()) {
+      return {
+        success: true,
+        data: {
+          root: relativePath || ".",
+          files: [relativePath],
+          count: 1,
+          truncated: false,
+        },
+        duration: Date.now() - start,
+      };
+    }
+
+    if (!stat.isDirectory()) {
+      return { success: false, error: "目标不是文件或目录", duration: Date.now() - start };
+    }
+
+    const files: string[] = [];
+    const truncated = await walkFiles(fullPath, files, maxResults);
+
+    return {
+      success: true,
+      data: {
+        root: relativePath || ".",
+        files,
+        count: files.length,
+        truncated,
+        maxResults,
+      },
+      duration: Date.now() - start,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+      duration: Date.now() - start,
+    };
+  }
+}
+
 // ─── 工具注册表 ──────────────────────────────────────────
 
 /** 已注册的工具定义 */
@@ -424,6 +675,41 @@ const toolDefinitions: ToolDefinition[] = [
       required: ["expression"],
     },
   },
+  {
+    name: "read_file",
+    description:
+      "读取工作区内允许访问的文本文件内容。只能读取源码、文档或配置示例等普通文本文件，不能读取密钥、环境变量、依赖目录、构建产物或工作区外文件。",
+    parameters: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description:
+            "相对于工作区根目录的文件路径，例如 server/services/tools.ts、README.md、web/src/main.tsx",
+        },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "list_files",
+    description:
+      "递归列出工作区内允许访问的文件路径。不会读取文件内容；会自动跳过密钥、环境变量、依赖目录、构建产物、版本控制目录和工作区外路径。",
+    parameters: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description:
+            "相对于工作区根目录的目录或文件路径；省略时从工作区根目录开始，例如 .、server、web/src",
+        },
+        maxResults: {
+          type: "number",
+          description: "最多返回多少个文件路径，默认 300，最大 1000",
+        },
+      },
+    },
+  },
 ];
 
 /** 工具名 → 执行函数的映射 */
@@ -431,6 +717,8 @@ const toolExecutors: Record<string, ToolExecuteFn> = {
   get_weather: executeGetWeather,
   web_search: executeWebSearch,
   calculator: executeCalculator,
+  read_file: executeReadFile,
+  list_files: executeListFiles,
 };
 
 // ─── 工具调度 ────────────────────────────────────────────
